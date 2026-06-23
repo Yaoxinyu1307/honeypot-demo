@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>主动反诈蜜罐 · Soul Honeypot</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;700&display=swap');
+
+:root{
+  --ink:#0A0D13;
+  --ink-2:#0F141E;
+  --panel:#141A26;
+  --panel-2:#1A2230;
+  --line:rgba(255,255,255,.08);
+  --line-strong:rgba(255,255,255,.14);
+  --text:#EAEDF2;
+  --muted:#8A93A6;
+  --faint:#5B6475;
+  --honey:#FFB020;      /* 我方·诱饵·AI */
+  --honey-dim:#7a5712;
+  --threat:#F0524B;     /* 骗子·威胁 */
+  --threat-dim:#5a201e;
+  --capture:#34D399;    /* 已处置·已保护 */
+  --mono:'JetBrains Mono',ui-monospace,monospace;
+  --disp:'Space Grotesk','PingFang SC','Microsoft YaHei',sans-serif;
+  --cjk:'PingFang SC','Microsoft YaHei','Hiragino Sans GB',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  background:var(--ink);
+  color:var(--text);
+  font-family:var(--cjk);
+  line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+  overflow-x:hidden;
+}
+.wrap{max-width:1180px;margin:0 auto;padding:0 28px}
+.mono{font-family:var(--mono)}
+.disp{font-family:var(--disp)}
+
+/* ===== ambient ===== */
+.glow{position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:
+   radial-gradient(700px 500px at 78% -5%, rgba(255,176,32,.10), transparent 60%),
+   radial-gradient(620px 480px at 12% 8%, rgba(240,82,75,.07), transparent 60%);
+}
+.grid-bg{position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.35;
+  background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);
+  background-size:54px 54px;
+  mask-image:radial-gradient(circle at 50% 30%,#000 0%,transparent 75%);
+}
+main{position:relative;z-index:1}
+
+/* ===== nav ===== */
+nav{position:sticky;top:0;z-index:50;backdrop-filter:blur(12px);
+  background:rgba(10,13,19,.72);border-bottom:1px solid var(--line)}
+.nav-in{display:flex;align-items:center;justify-content:space-between;height:62px}
+.brand{display:flex;align-items:center;gap:12px;font-family:var(--disp);font-weight:700;letter-spacing:.04em}
+.brand .dot{width:9px;height:9px;border-radius:50%;background:var(--honey);box-shadow:0 0 12px var(--honey)}
+.brand small{font-family:var(--mono);font-size:11px;color:var(--muted);font-weight:400;letter-spacing:.16em}
+.live{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px;color:var(--honey)}
+.live .beat{width:7px;height:7px;border-radius:50%;background:var(--honey);animation:beat 1.8s ease-in-out infinite}
+@keyframes beat{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.7)}}
+
+/* ===== hero ===== */
+header{padding:88px 0 64px}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.28em;color:var(--honey);
+  display:inline-flex;align-items:center;gap:10px;margin-bottom:26px}
+.eyebrow::before{content:"";width:30px;height:1px;background:var(--honey)}
+h1{font-family:var(--disp);font-weight:700;font-size:clamp(34px,5.4vw,64px);line-height:1.06;letter-spacing:-.01em}
+h1 .strike{color:var(--faint);position:relative;white-space:nowrap}
+h1 .strike::after{content:"";position:absolute;left:-2%;right:-2%;top:54%;height:3px;background:var(--threat);transform:scaleX(0);transform-origin:left;animation:strike 1s .5s ease forwards}
+@keyframes strike{to{transform:scaleX(1)}}
+h1 .hl{color:var(--honey)}
+.lede{margin-top:26px;max-width:620px;font-size:17px;color:var(--muted)}
+.lede b{color:var(--text);font-weight:500}
+
+/* flip compare */
+.flip{display:grid;grid-template-columns:1fr auto 1fr;gap:0;margin-top:48px;align-items:stretch;
+  border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(--ink-2)}
+.flip-col{padding:26px 28px}
+.flip-col.passive{opacity:.62}
+.flip-col h4{font-family:var(--mono);font-size:12px;letter-spacing:.14em;margin-bottom:18px;display:flex;align-items:center;gap:9px}
+.flip-col.passive h4{color:var(--faint)}
+.flip-col.active h4{color:var(--honey)}
+.tag-dim{font-size:10px;border:1px solid var(--faint);color:var(--faint);padding:2px 7px;border-radius:20px}
+.tag-on{font-size:10px;border:1px solid var(--honey);color:var(--honey);padding:2px 7px;border-radius:20px}
+.flow{display:flex;flex-direction:column;gap:11px}
+.flow span{font-size:14px;color:var(--muted);display:flex;align-items:center;gap:11px}
+.flow .n{font-family:var(--mono);font-size:11px;width:18px;color:var(--faint)}
+.active .flow span{color:var(--text)}
+.active .flow .n{color:var(--honey)}
+.flip-mid{display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,transparent,rgba(255,176,32,.04));
+  border-left:1px solid var(--line);border-right:1px solid var(--line);padding:0 16px}
+.flip-mid span{font-family:var(--mono);font-size:22px;color:var(--honey);transform:rotate(0deg)}
+.cta-row{margin-top:40px;display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+.btn{font-family:var(--cjk);font-size:15px;font-weight:500;border:none;cursor:pointer;border-radius:11px;
+  padding:14px 26px;transition:.18s;display:inline-flex;align-items:center;gap:9px}
+.btn-primary{background:var(--honey);color:#1b1300}
+.btn-primary:hover{box-shadow:0 8px 30px rgba(255,176,32,.32);transform:translateY(-1px)}
+.btn-ghost{background:transparent;color:var(--muted);border:1px solid var(--line-strong)}
+.btn-ghost:hover{color:var(--text);border-color:var(--text)}
+
+/* ===== section frame ===== */
+section{padding:74px 0}
+.sec-head{margin-bottom:42px}
+.sec-kicker{font-family:var(--mono);font-size:12px;letter-spacing:.24em;color:var(--honey);display:flex;align-items:center;gap:12px}
+.sec-kicker .idx{color:var(--faint)}
+.sec-title{font-family:var(--disp);font-weight:700;font-size:clamp(26px,3.4vw,38px);margin-top:16px;letter-spacing:-.01em}
+.sec-sub{color:var(--muted);margin-top:14px;max-width:640px}
+
+/* ===== value · 痛点 vs 收益 强对比 ===== */
+.vs{position:relative;margin-top:8px}
+.vs-divider{position:absolute;left:50%;top:0;bottom:0;width:2px;transform:translateX(-50%);
+  background:linear-gradient(180deg,var(--threat),#caa23a 50%,var(--capture));
+  box-shadow:0 0 18px 1px rgba(255,176,32,.35);border-radius:2px}
+.vs-headrow,.vs-row{display:grid;grid-template-columns:1fr 86px 1fr;align-items:center}
+.vs-headrow{margin-bottom:26px}
+.vs-head{font-family:var(--mono);font-size:12px;letter-spacing:.16em}
+.vs-head.pain{color:var(--threat);text-align:right;padding-right:8px}
+.vs-head.gain{color:var(--capture);text-align:left;padding-left:8px}
+.vs-mid{}
+.vs-row{padding:26px 0;border-top:1px solid var(--line)}
+.vs-row:first-of-type{border-top:none}
+.vs-cell{display:flex;flex-direction:column;gap:7px}
+.vs-cell.pain{text-align:right;align-items:flex-end;padding-right:8px}
+.vs-cell.gain{text-align:left;align-items:flex-start;padding-left:8px}
+.vs-num{font-family:var(--disp);font-weight:700;font-size:46px;line-height:1;letter-spacing:-.01em}
+.vs-num.mid{font-size:34px}
+.vs-num.sm{font-size:26px}
+.vs-cell.pain .vs-num{color:var(--threat)}
+.vs-cell.gain .vs-num{color:var(--capture)}
+.vs-desc{font-size:14px;color:var(--text);max-width:340px}
+.vs-meta{font-family:var(--mono);font-size:10.5px;color:var(--faint);letter-spacing:.03em}
+.vs-arrow{display:flex;align-items:center;justify-content:center;position:relative;z-index:2}
+.ar-line{height:2px;width:38px;background:linear-gradient(90deg,var(--threat),var(--capture))}
+.ar-head{font-size:11px;margin-left:-3px;background:linear-gradient(90deg,var(--threat),var(--capture));
+  -webkit-background-clip:text;background-clip:text;color:transparent}
+.value-line{margin-top:30px;font-size:14.5px;color:var(--muted);border-left:2px solid var(--honey);padding-left:16px;line-height:1.65}
+.value-line b{color:var(--text);font-weight:600}
+
+/* tooltip */
+.tip{border-bottom:1px dashed var(--honey);cursor:help;position:relative;color:var(--honey)}
+.tip::after{content:attr(data-tip);position:absolute;left:50%;bottom:140%;transform:translateX(-50%) translateY(4px);
+  background:var(--panel-2);border:1px solid var(--line-strong);border-radius:9px;padding:9px 13px;
+  font-size:12.5px;font-family:var(--cjk);color:var(--text);line-height:1.5;white-space:normal;width:260px;
+  opacity:0;pointer-events:none;transition:.2s;z-index:30;box-shadow:0 12px 30px rgba(0,0,0,.5);font-weight:400;letter-spacing:0}
+.tip:hover::after{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* moat */
+.moat{border:1px solid var(--honey-dim);background:linear-gradient(110deg,rgba(255,176,32,.07),rgba(255,176,32,.02));border-radius:16px;padding:30px 34px}
+.moat .mk{font-family:var(--mono);font-size:11px;color:var(--honey);letter-spacing:.18em;margin-bottom:16px;display:flex;align-items:center;gap:10px}
+.moat .mk::before{content:"";width:24px;height:1px;background:var(--honey)}
+.moat p{font-size:17px;color:var(--text);line-height:1.75;max-width:880px}
+.moat b{color:var(--honey);font-weight:500}
+.sting-note{font-family:var(--mono);font-size:12px;color:var(--faint);margin-top:20px;text-align:center;letter-spacing:.03em}
+
+/* ===== STING console ===== */
+.sting{border:1px solid var(--line-strong);border-radius:20px;overflow:hidden;background:var(--ink-2);
+  box-shadow:0 40px 120px -40px rgba(0,0,0,.8)}
+.sting-top{display:flex;align-items:center;justify-content:space-between;padding:16px 22px;border-bottom:1px solid var(--line);
+  background:var(--panel)}
+.sting-top .l{display:flex;align-items:center;gap:14px;font-family:var(--mono);font-size:12px;color:var(--muted)}
+.lamp{width:8px;height:8px;border-radius:50%;background:var(--honey);box-shadow:0 0 10px var(--honey)}
+.bait-id{color:var(--honey)}
+.threat-wrap{display:flex;align-items:center;gap:12px;font-family:var(--mono);font-size:11px;color:var(--muted)}
+.threat-bar{width:120px;height:6px;border-radius:6px;background:rgba(255,255,255,.08);overflow:hidden}
+.threat-fill{height:100%;width:0;background:var(--honey);transition:width .6s ease,background .6s}
+.sting-body{display:grid;grid-template-columns:1.05fr .95fr;min-height:520px}
+
+/* chat side */
+.chat{padding:22px;border-right:1px solid var(--line);display:flex;flex-direction:column;background:
+  linear-gradient(180deg,rgba(255,255,255,.012),transparent)}
+.chat-scroll{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:14px;padding-right:6px}
+.chat-scroll::-webkit-scrollbar{width:5px}.chat-scroll::-webkit-scrollbar-thumb{background:var(--line-strong);border-radius:5px}
+.sys-note{align-self:center;font-family:var(--mono);font-size:11px;color:var(--faint);text-align:center;
+  border:1px dashed var(--line-strong);border-radius:8px;padding:7px 14px;max-width:90%}
+.msg{max-width:80%;padding:11px 15px;border-radius:14px;font-size:14.5px;line-height:1.5;animation:pop .35s ease}
+@keyframes pop{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.msg.scam{align-self:flex-start;background:var(--panel-2);border:1px solid var(--threat-dim);border-top-left-radius:4px}
+.msg.bait{align-self:flex-end;background:rgba(255,176,32,.10);border:1px solid var(--honey-dim);border-top-right-radius:4px}
+.msg .who{font-family:var(--mono);font-size:10px;letter-spacing:.08em;margin-bottom:5px;display:flex;gap:7px;align-items:center}
+.msg.scam .who{color:var(--threat)}
+.msg.bait .who{color:var(--honey)}
+.aiplay{font-size:9px;border:1px solid var(--honey);color:var(--honey);border-radius:10px;padding:0 6px}
+.typing{align-self:flex-start;display:flex;gap:4px;padding:13px 16px;background:var(--panel-2);border-radius:14px;border-top-left-radius:4px}
+.typing i{width:6px;height:6px;border-radius:50%;background:var(--faint);animation:ty 1.2s infinite}
+.typing i:nth-child(2){animation-delay:.2s}.typing i:nth-child(3){animation-delay:.4s}
+@keyframes ty{0%,60%,100%{opacity:.3;transform:translateY(0)}30%{opacity:1;transform:translateY(-4px)}}
+
+/* AI side */
+.ai{padding:22px;display:flex;flex-direction:column;background:var(--ink)}
+.ai-h{font-family:var(--mono);font-size:11px;letter-spacing:.16em;color:var(--muted);margin-bottom:16px;display:flex;align-items:center;gap:9px}
+.ai-h .spin{width:11px;height:11px;border:2px solid var(--honey);border-right-color:transparent;border-radius:50%;animation:sp 1s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.ai-log{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding-right:6px}
+.ai-log::-webkit-scrollbar{width:5px}.ai-log::-webkit-scrollbar-thumb{background:var(--line-strong);border-radius:5px}
+.ev{border:1px solid var(--line);border-radius:11px;padding:12px 14px;background:var(--panel);animation:slidein .4s ease}
+@keyframes slidein{from{opacity:0;transform:translateX(10px)}to{opacity:1;transform:none}}
+.ev .stage{font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--honey);display:flex;justify-content:space-between}
+.ev .stage.warn{color:var(--threat)}
+.ev .note{font-size:13px;color:var(--text);margin-top:7px}
+.ev .fp{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:6px}
+.locker{border-top:1px solid var(--line);margin-top:16px;padding-top:16px}
+.locker-h{font-family:var(--mono);font-size:11px;letter-spacing:.14em;color:var(--muted);margin-bottom:12px;display:flex;justify-content:space-between}
+.locker-h .cnt{color:var(--honey)}
+.artifact{display:flex;align-items:center;gap:11px;padding:9px 12px;border:1px solid var(--threat-dim);border-radius:9px;
+  background:rgba(240,82,75,.06);margin-bottom:8px;animation:pop .35s ease}
+.artifact .k{font-family:var(--mono);font-size:10px;color:var(--threat);width:84px;flex-shrink:0}
+.artifact .v{font-family:var(--mono);font-size:12.5px;color:var(--text);word-break:break-all}
+.locker-empty{font-size:12px;color:var(--faint);font-style:italic}
+
+/* console footer / controls */
+.sting-foot{border-top:1px solid var(--line);padding:16px 22px;display:flex;align-items:center;justify-content:space-between;
+  background:var(--panel);gap:16px;flex-wrap:wrap}
+.step-info{font-family:var(--mono);font-size:11px;color:var(--muted)}
+.step-info b{color:var(--honey)}
+.foot-btns{display:flex;gap:12px}
+.btn-sm{font-size:14px;padding:11px 22px;border-radius:10px}
+.btn-bust{background:var(--threat);color:#fff;opacity:.4;pointer-events:none;transition:.25s}
+.btn-bust.ready{opacity:1;pointer-events:auto;box-shadow:0 0 0 0 rgba(240,82,75,.5);animation:pulse 1.6s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(240,82,75,.45)}70%{box-shadow:0 0 0 12px rgba(240,82,75,0)}100%{box-shadow:0 0 0 0 rgba(240,82,75,0)}}
+.btn-bust:hover.ready{transform:translateY(-1px)}
+.btn-reset{background:transparent;border:1px solid var(--line-strong);color:var(--muted)}
+.btn-reset:hover{color:var(--text)}
+
+/* ===== bust overlay (network) ===== */
+.bust{display:none;position:fixed;inset:0;z-index:100;background:rgba(6,8,12,.94);backdrop-filter:blur(6px);
+  align-items:center;justify-content:center;padding:24px}
+.bust.show{display:flex;animation:fade .3s ease}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+.bust-card{width:min(880px,100%);border:1px solid var(--line-strong);border-radius:20px;background:var(--ink-2);overflow:hidden}
+.bust-head{padding:20px 26px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+.bust-head .t{font-family:var(--disp);font-weight:700;font-size:20px}
+.bust-head .t .s{color:var(--capture)}
+.x{cursor:pointer;color:var(--muted);font-family:var(--mono);font-size:20px;background:none;border:none}
+.net{position:relative;height:340px;margin:10px}
+.net svg{position:absolute;inset:0;width:100%;height:100%}
+.node{position:absolute;transform:translate(-50%,-50%);text-align:center}
+.node .ball{width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-size:10px;margin:0 auto}
+.node.center .ball{width:64px;height:64px;background:rgba(240,82,75,.16);border:2px solid var(--threat);color:var(--threat);
+  box-shadow:0 0 24px rgba(240,82,75,.4)}
+.node.linked .ball{background:rgba(240,82,75,.10);border:1.5px solid var(--threat);color:var(--threat)}
+.node .cap{font-family:var(--mono);font-size:9px;color:var(--muted);margin-top:6px;white-space:nowrap}
+.node.appear{animation:nodeIn .5s ease both}
+@keyframes nodeIn{from{opacity:0;transform:translate(-50%,-50%) scale(.4)}to{opacity:1;transform:translate(-50%,-50%) scale(1)}}
+.bust-stats{display:grid;grid-template-columns:repeat(3,1fr);border-top:1px solid var(--line)}
+.bust-stats .bs{padding:22px 24px;border-right:1px solid var(--line);text-align:center}
+.bust-stats .bs:last-child{border-right:none}
+.bust-stats .num{font-family:var(--disp);font-weight:700;font-size:32px;color:var(--capture)}
+.bust-stats .num.red{color:var(--threat)}
+.bust-stats .cl{font-size:12px;color:var(--muted);margin-top:6px}
+.scanline{font-family:var(--mono);font-size:12px;color:var(--honey);text-align:center;padding:14px;border-top:1px solid var(--line)}
+
+/* ===== AI capability band ===== */
+.ai-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}
+.aic{border:1px solid var(--line);border-radius:14px;padding:22px;background:var(--panel);transition:.2s}
+.aic:hover{border-color:var(--honey-dim);transform:translateY(-3px)}
+.aic .ic{font-family:var(--mono);font-size:11px;color:var(--honey);letter-spacing:.1em}
+.aic h6{font-size:16px;margin:14px 0 8px;font-weight:600}
+.aic p{font-size:13px;color:var(--muted)}
+.aic .io{font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:12px;display:flex;align-items:center;gap:7px}
+.aic .io b{color:var(--honey);font-weight:400}
+.aic .io .ar{color:var(--honey)}
+.aic .key{margin-top:12px;font-size:12px;color:var(--honey);background:rgba(255,176,32,.08);
+  border:1px solid var(--honey-dim);border-radius:7px;padding:6px 10px;line-height:1.45}
+.aic .more{max-height:0;overflow:hidden;transition:max-height .35s ease,margin .35s ease;margin-top:0}
+.aic:hover .more,.aic:focus-within .more{max-height:200px;margin-top:12px}
+.aic .more .mt{font-size:12.5px;color:var(--muted);line-height:1.55;border-top:1px dashed var(--line-strong);padding-top:12px}
+.aic .hint{font-family:var(--mono);font-size:10px;color:var(--faint);margin-top:12px;opacity:.7}
+.aic:hover .hint,.aic:focus-within .hint{display:none}
+
+/* ===== report ===== */
+.rep-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:20px}
+.rep{border:1px solid var(--line);border-radius:14px;padding:26px 22px;background:linear-gradient(180deg,var(--panel),var(--ink-2))}
+.rep .num{font-family:var(--disp);font-weight:700;font-size:38px;color:var(--honey);letter-spacing:-.01em}
+.rep .lab{font-size:13px;color:var(--muted);margin-top:8px}
+.sim{font-family:var(--mono);font-size:10px;color:var(--faint);margin-top:24px;text-align:center;letter-spacing:.08em}
+.trend{margin-top:22px;border:1px solid var(--line);border-radius:16px;padding:24px 26px 14px;background:linear-gradient(180deg,var(--panel),var(--ink-2))}
+.trend-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:8px;flex-wrap:wrap}
+.trend-t{font-family:var(--disp);font-weight:700;font-size:18px}
+.trend-s{font-size:13px;color:var(--muted);margin-top:6px;max-width:560px}
+.trend-badge{font-family:var(--mono);font-size:12px;color:var(--honey);border:1px solid var(--honey-dim);
+  background:rgba(255,176,32,.08);border-radius:20px;padding:6px 14px;white-space:nowrap}
+#trendChart{width:100%;height:240px}
+
+/* ===== redline / footer ===== */
+.redline{border:1px solid var(--threat-dim);background:rgba(240,82,75,.05);border-radius:14px;padding:24px 28px;display:flex;gap:18px;align-items:flex-start}
+.redline .mk{font-family:var(--mono);font-size:11px;color:var(--threat);letter-spacing:.1em;flex-shrink:0;padding-top:2px}
+.redline p{font-size:14px;color:var(--muted)}
+.redline b{color:var(--text);font-weight:500}
+footer{padding:50px 0;border-top:1px solid var(--line);margin-top:40px;text-align:center;color:var(--faint);font-family:var(--mono);font-size:11px;letter-spacing:.1em}
+
+@media (max-width:880px){
+  .flip{grid-template-columns:1fr}.flip-mid{border:none;border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:12px}
+  .flip-mid span{transform:rotate(90deg)}
+  .sting-body{grid-template-columns:1fr}
+  .chat{border-right:none;border-bottom:1px solid var(--line)}
+  .ai-grid,.rep-grid{grid-template-columns:1fr 1fr}
+  .bust-stats{grid-template-columns:1fr}
+  /* vs 对比改为上下堆叠 */
+  .vs-divider{display:none}
+  .vs-headrow{display:none}
+  .vs-row{grid-template-columns:1fr;padding:20px 0;gap:14px}
+  .vs-cell.pain,.vs-cell.gain{text-align:left;align-items:flex-start;padding:0}
+  .vs-cell.pain{border-left:3px solid var(--threat);padding-left:14px}
+  .vs-cell.gain{border-left:3px solid var(--capture);padding-left:14px}
+  .vs-arrow{transform:rotate(90deg);justify-content:flex-start;padding-left:18px}
+  .vs-num{font-size:34px}.vs-num.mid{font-size:28px}.vs-num.sm{font-size:22px}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="glow"></div>
+<div class="grid-bg"></div>
+
+<nav><div class="wrap nav-in">
+  <div class="brand"><span class="dot"></span>SOUL <small>/ HONEYPOT 主动反诈蜜罐</small></div>
+  <div class="live"><span class="beat"></span>蜜罐在线 · 12 个诱饵布署中</div>
+</div></nav>
+
+<main>
+<header><div class="wrap">
+  <div class="eyebrow">SOUL HONEYPOT · 主动反诈蜜罐</div>
+  <h1>不再<span class="strike">等用户被骗</span>。<br>我们布好诱饵，<span class="hl">让黑产主动暴露。</span></h1>
+  <p class="lede">不等用户被骗，我们先布好防线，让黑产主动暴露。传统反诈多为事后处置，骗子换号即可反复作案——Soul 主动反诈蜜罐以<b>「AI 被动应答 + 全链路取证」</b>在事前布防：仅针对高危嫌疑账号，用 AI 诱饵承接对话、采集完整作案链路，再通过<span class="tip" data-tip="话术指纹 = 基于语义特征提炼出的诈骗脚本标识，同一团伙的话术高度雷同，可用它在全平台扫描同源账号。">话术指纹</span>识别同源团伙，实现批量封禁与证据留存。把平台的反诈负债，升级为可闭环的主动防御引擎。</p>
+
+  <div class="flip">
+    <div class="flip-col passive">
+      <h4>传统反诈 <span class="tag-dim">被动挨打</span></h4>
+      <div class="flow">
+        <span><i class="n mono">01</i>用户被骗，损失已发生</span>
+        <span><i class="n mono">02</i>事后投诉、走维权</span>
+        <span><i class="n mono">03</i>平台封掉一个号</span>
+        <span><i class="n mono">04</i>骗子换号，再来一遍</span>
+      </div>
+    </div>
+    <div class="flip-mid"><span class="mono">▶</span></div>
+    <div class="flip-col active">
+      <h4>主动反诈蜜罐 <span class="tag-on">主动防御</span></h4>
+      <div class="flow">
+        <span><i class="n mono">01</i>布下 AI 诱饵，被动等待</span>
+        <span><i class="n mono">02</i>高危账号主动接触、暴露剧本</span>
+        <span><i class="n mono">03</i>采集作案链路：微信号 / 域名 / 收款码</span>
+        <span><i class="n mono">04</i>指纹识别，同源团伙批量处置</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="cta-row">
+    <button class="btn btn-primary" onclick="document.getElementById('sting').scrollIntoView()">▶ 进入蜜罐实战演示</button>
+    <button class="btn btn-ghost" onclick="document.getElementById('value').scrollIntoView()">先看它解决什么</button>
+  </div>
+</div></header>
+
+<!-- 业务价值 -->
+<section id="value"><div class="wrap">
+  <div class="sec-head">
+    <div class="sec-kicker"><span class="idx mono">01 /</span> 业务价值 · 它在解决一个正在流血的真问题</div>
+    <div class="sec-title">诈骗是 Soul 当下最痛、也最伤 IPO 的伤口</div>
+    <p class="sec-sub">这不是锦上添花的功能，是悬在头顶的合规之刀。左边是现状，右边是这套机制能换来的东西。</p>
+  </div>
+  <div class="vs">
+    <div class="vs-divider"></div>
+    <div class="vs-headrow">
+      <div class="vs-head pain">现状 · 痛点</div>
+      <div class="vs-mid"></div>
+      <div class="vs-head gain">收益 · 这套机制换来什么</div>
+    </div>
+
+    <div class="vs-row">
+      <div class="vs-cell pain">
+        <div class="vs-num">6000+</div>
+        <div class="vs-desc">黑猫投诉，诈骗类占大头，且仍在增多</div>
+        <div class="vs-meta">来源：公开投诉平台 · 2025.12</div>
+      </div>
+      <div class="vs-arrow"><span class="ar-line"></span><span class="ar-head">▶</span></div>
+      <div class="vs-cell gain">
+        <div class="vs-num">0 用户损失</div>
+        <div class="vs-desc">骗子的时间全耗在 AI 诱饵上，真实用户零接触</div>
+        <div class="vs-meta">机制：诱饵被动承接全部攻击流量</div>
+      </div>
+    </div>
+
+    <div class="vs-row">
+      <div class="vs-cell pain">
+        <div class="vs-num mid">¥数万–数百万</div>
+        <div class="vs-desc">单起杀猪盘案件用户损失区间</div>
+        <div class="vs-meta">来源：已公开警方通报案例</div>
+      </div>
+      <div class="vs-arrow"><span class="ar-line"></span><span class="ar-head">▶</span></div>
+      <div class="vs-cell gain">
+        <div class="vs-num mid">骗子成本飙升</div>
+        <div class="vs-desc">骗子分不清谁是陷阱，下手预期成本变高，转去别处</div>
+        <div class="vs-meta">机制：让 Soul 成为性价比最差的猎场</div>
+      </div>
+    </div>
+
+    <div class="vs-row">
+      <div class="vs-cell pain">
+        <div class="vs-num sm">第 4 次冲刺 IPO</div>
+        <div class="vs-desc">安全合规承压，舆情即风险</div>
+        <div class="vs-meta">来源：招股书 / 公开报道</div>
+      </div>
+      <div class="vs-arrow"><span class="ar-line"></span><span class="ar-head">▶</span></div>
+      <div class="vs-cell gain">
+        <div class="vs-num sm">IPO 合规加分项</div>
+        <div class="vs-desc">"主动反诈防御"是能在路演、监管面前加分的安全叙事</div>
+        <div class="vs-meta">价值：被动受害平台 → 主动防御平台</div>
+      </div>
+    </div>
+  </div>
+  <p class="value-line"><b>ROI 结构：</b>诱饵由 AI 自动运行，边际成本只是一次推理的算力开销；而拦下的单起杀猪盘止损动辄数万至数百万。<b>用极小算力撬动高额止损，不是烧钱无底洞，而是投入产出比天然成立的安全资产。</b></p>
+  <p class="value-line"><b>额外战略价值：</b>"主动反诈能力"是能写进招股书安全章节、在路演与监管面前加分的叙事——把"被动挨打的受害平台"翻转成"主动防御的安全平台"。</p>
+</div></section>
+
+<!-- STING -->
+<section id="sting"><div class="wrap">
+  <div class="sec-head">
+    <div class="sec-kicker"><span class="idx mono">02 /</span> 实战演示 · 一次完整的承接取证与处置</div>
+    <div class="sec-title">看 AI 诱饵如何识别、取证并批量处置团伙</div>
+    <p class="sec-sub">点「推进」逐步展开。诱饵账号被动等待，骗子主动上钩、走完剧本，AI 全程接管应答并实时提取作案工具——证据集齐后即可收网。</p>
+  </div>
+
+  <div class="sting">
+    <div class="sting-top">
+      <div class="l"><span class="lamp"></span>诱饵账号 <span class="bait-id mono">@林晚 · 人设：32岁/新离异/有积蓄</span></div>
+      <div class="threat-wrap">威胁等级
+        <div class="threat-bar"><div class="threat-fill" id="tfill"></div></div>
+        <span id="tval">0%</span>
+      </div>
+    </div>
+
+    <div class="sting-body">
+      <div class="chat">
+        <div class="chat-scroll" id="chat">
+          <div class="sys-note">诱饵已布署 · AI 接管账号 · 不主动搭讪任何人，仅等待可疑接触</div>
+        </div>
+      </div>
+      <div class="ai">
+        <div class="ai-h"><span class="spin"></span>SOUL X · 反诈大模型 · 实时分析</div>
+        <div class="ai-log" id="ailog">
+          <div class="locker-empty">等待目标上钩……</div>
+        </div>
+        <div class="locker">
+          <div class="locker-h">证据柜 · 已提取作案工具 <span class="cnt mono" id="evcount">0</span></div>
+          <div id="locker"><div class="locker-empty">暂无</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sting-foot">
+      <div class="step-info">进度 <b id="stepnow">0</b> / <span id="steptotal">6</span> · <span id="phaselabel">待命</span></div>
+      <div class="foot-btns">
+        <button class="btn btn-sm btn-reset" id="resetBtn" onclick="resetSting()">重置</button>
+        <button class="btn btn-sm btn-primary" id="nextBtn" onclick="nextStep()">推进演示 ▶</button>
+        <button class="btn btn-sm btn-bust" id="bustBtn" onclick="bust()">收网 ▶</button>
+      </div>
+    </div>
+  </div>
+  <p class="sting-note">▲ 全流程由 Soul X 反诈大模型驱动：接管套话 → 实时识别阶段 → 提取工具链 → 指纹收网，真实用户全程零接触</p>
+</div></section>
+
+<!-- AI band -->
+<section><div class="wrap">
+  <div class="sec-head">
+    <div class="sec-kicker"><span class="idx mono">03 /</span> AI 应用 · AI 在四个环节深度落地</div>
+    <div class="sec-title">四层模型串联，构建端到端全链路反诈闭环</div>
+  </div>
+  <p class="sec-sub" style="margin-top:-26px;margin-bottom:34px">四层独立 AI 能力全自动流转，全程被动交互、不打扰普通用户，在合规框架内完成事前反诈闭环。<span style="color:var(--faint)">（悬停查看每层细节）</span></p>
+  <div class="ai-grid">
+    <div class="aic" tabindex="0">
+      <div class="ic mono">// 01 诱饵接管层</div>
+      <h6>AI 拟人诱饵交互</h6>
+      <p>模型固化多类高风险人设，仅被动应答骗子主动发起的对话，绝不主动推进敏感话题。</p>
+      <div class="io">骗子消息 <span class="ar">→</span> <b>拟人化被动回复</b></div>
+      <div class="key">承接全流程剧本，拉高黑产时间成本</div>
+      <div class="more"><div class="mt">完整承接杀猪盘剧本，把骗子的作案时间消耗在 AI 诱饵上，减少真实用户暴露风险。所有对话由对方发起，诱饵绝不主动提钱或诱导。</div></div>
+      <div class="hint">悬停展开 ↓</div>
+    </div>
+    <div class="aic" tabindex="0">
+      <div class="ic mono">// 02 语义识别层</div>
+      <h6>实时话术指纹比对</h6>
+      <p>依托百万级脚本库流式解析对话，自动区分情感养猪、导流、投资收割等阶段。</p>
+      <div class="io">对话流 <span class="ar">→</span> <b>诈骗阶段标记</b></div>
+      <div class="key">仅扫描诱饵对话，保障普通用户聊天隐私</div>
+      <div class="more"><div class="mt">扫描只对诱饵账号的会话开启，正常用户聊天不被触碰；命中脚本特征即实时标记当前所处阶段，实现风险提前预判。</div></div>
+      <div class="hint">悬停展开 ↓</div>
+    </div>
+    <div class="aic" tabindex="0">
+      <div class="ic mono">// 03 证据抽取层</div>
+      <h6>作案链路结构化提取</h6>
+      <p>信息抽取模型自动抓取微信号、诈骗域名、收款渠道等黑产关键链路，加密存证。</p>
+      <div class="io">对话 <span class="ar">→</span> <b>标准化电子证据包</b></div>
+      <div class="key">输出符合公安对接要求的电子证据包</div>
+      <div class="more"><div class="mt">无需人工整理，自动将作案工具结构化、加密固化为标准电子证据包，按属地协作流程移交警方，全程留痕可追溯。</div></div>
+      <div class="hint">悬停展开 ↓</div>
+    </div>
+    <div class="aic" tabindex="0">
+      <div class="ic mono">// 04 团伙扩散层</div>
+      <h6>同源团伙全域识别</h6>
+      <p>以话术、设备、资金多维指纹跨账号匹配同源矩阵，交叉复核后批量处置。</p>
+      <div class="io">单点指纹 <span class="ar">→</span> <b>全域同源团伙</b></div>
+      <div class="key">打破单账号封禁短板，系统性清除</div>
+      <div class="more"><div class="mt">多特征交叉复核后才批量处置关联账号，避免误伤；从"封一个号"升级为"端一整张同源诈骗网"，系统性清除平台黑产。</div></div>
+      <div class="hint">悬停展开 ↓</div>
+    </div>
+  </div>
+</div></section>
+
+<!-- moat -->
+<section style="padding-top:0"><div class="wrap">
+  <div class="moat">
+    <div class="mk">护城河 · 为什么只有 SOUL 能做</div>
+    <p>探探、陌陌靠<b>实名认证</b>做安全，代价是杀死匿名。而匿名恰恰是 Soul 的命根，也是它沦为诈骗温床的根源。<b>唯一能在不牺牲匿名的前提下根治匿名副作用的，就是这种主动蜜罐。</b>骗子抄得走功能，抄不走 Soul 的匿名基因——这道护城河，长在 Soul 身上。</p>
+  </div>
+</div></section>
+
+<!-- report -->
+<section><div class="wrap">
+  <div class="sec-head">
+    <div class="sec-kicker"><span class="idx mono">04 /</span> 运行成果 · 主动反诈的战报</div>
+    <div class="sec-title">把抽象的"主动反诈"落成可见的数字</div>
+  </div>
+  <div class="rep-grid">
+    <div class="rep"><div class="num">47</div><div class="lab">本月主动清除诈骗团伙</div></div>
+    <div class="rep"><div class="num">1,283</div><div class="lab">关联指纹封禁账号</div></div>
+    <div class="rep"><div class="num">9,640</div><div class="lab">拦截的潜在受害者</div></div>
+    <div class="rep"><div class="num">312</div><div class="lab">沉淀入库的话术指纹</div></div>
+  </div>
+  <div class="trend">
+    <div class="trend-head">
+      <div>
+        <div class="trend-t">月度清除团伙数 · 持续爬升</div>
+        <div class="trend-s">指纹库每月增厚，识别率与清剿量同步上升——一套越用越值钱的反诈资产</div>
+      </div>
+      <div class="trend-badge">↑ 近 6 月 +213%</div>
+    </div>
+    <div id="trendChart"></div>
+  </div>
+  <div class="sim">▲ 演示模拟数据 · 测算口径：12 个诱饵 × 日均承接约 18 次可疑接触 × 命中率推算 · 真实指标接入风控系统后实时更新</div>
+</div></section>
+
+<!-- redline -->
+<section><div class="wrap">
+  <div class="redline">
+    <div class="mk">⚠ 合规红线</div>
+    <div>
+      <p>诱饵<b>被动等待、绝不主动诱导</b>或推进骗局，所有犯罪意图与行为均由骗子自己发起；判定须<b>同时命中"引导脱平台 + 引导转账 + 剧本化推进"多重特征</b>才触发，宁可漏报、绝不误判真实用户；提取证据自动固化为<b>标准化电子证据包</b>，按属地协作流程移交警方。</p>
+      <p style="margin-top:12px"><b>用户侧零感知</b>——整套机制只在后台风控层运行，不打扰正常社交、不向用户暴露，既不制造"平台很多骗子"的恐慌，也不给真实用户增加任何操作。以上三条是上线前须通过法务合规三重确认的前提。</p>
+    </div>
+  </div>
+</div></section>
+
+<footer>SOUL · HONEYPOT — 让骗子在 Soul 成为性价比最差的猎物</footer>
+</main>
+
+<!-- bust overlay -->
+<div class="bust" id="bust">
+  <div class="bust-card">
+    <div class="bust-head"><div class="t">收网完成 · <span class="s">团伙已锁定</span></div><button class="x" onclick="closeBust()">✕</button></div>
+    <div class="net" id="net"><svg id="netsvg"></svg></div>
+    <div class="scanline" id="scanline">正在用话术指纹全平台扫描同源账号……</div>
+    <div class="bust-stats" id="buststats" style="display:none">
+      <div class="bs"><div class="num red">6</div><div class="cl">同源关联账号</div></div>
+      <div class="bs"><div class="num">214</div><div class="cl">该团伙潜在受害者已拦截</div></div>
+      <div class="bs"><div class="num">1</div><div class="cl">话术指纹入库 · 持续生效</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const STEPS=[
+ {side:'scam',who:'可疑用户 @afar_xx',text:'在吗？刷到你的头像那一下，就觉得我们好有缘分～',
+  ai:{stage:'阶段 · 接触',warn:false,note:'目标主动锁定诱饵。AI 接管账号开始应答，全程不戳穿。',fp:'指纹 #开场速热'},threat:12},
+ {side:'bait',who:'诱饵 @林晚',aiplay:true,text:'哈哈是吗，我也常常睡不着，刚好看到你。',
+  ai:{stage:'AI 接管应答',warn:false,note:'诱饵被动应答，引对方暴露剧本——绝不主动提钱、不主动推进。',fp:''},threat:18},
+ {side:'scam',who:'可疑用户 @afar_xx',text:'每天跟你说话是我最近唯一的盼头。我不图你别的，就想找个人一起把往后的日子规划好❤️',
+  ai:{stage:'阶段 · 建立信任（养猪）',warn:false,note:'命中"不图你什么+共同未来"情感操控话术，进入"养猪"阶段。',fp:'指纹 #情感速热 #专属感 #未来绑定'},threat:34},
+ {side:'scam',who:'可疑用户 @afar_xx',text:'这里聊不太方便，加我微信吧～ wxid_lq****8829，我们慢慢聊。',
+  ai:{stage:'阶段 · 引导脱离平台',warn:true,note:'检测到引导用户脱离平台监管——杀猪盘关键转折点。',fp:'提取 → 微信号',extract:{k:'微信号',v:'wxid_lq****8829'}},threat:62},
+ {side:'scam',who:'可疑用户 @afar_xx',text:'我自己一直在做一个内部渠道，带你只是不想你错过。先小试一笔，赚到了你就信我了。',
+  ai:{stage:'阶段 · 引导投资（收割）',warn:true,note:'命中"内部渠道+稳赚+先小额试水"诱导投资话术，进入收割阶段。',fp:'提取 → 诈骗域名',extract:{k:'诈骗域名',v:'t****-invest.cc'}},threat:84},
+ {side:'scam',who:'可疑用户 @afar_xx',text:'钱打到这个账户就行，今天名额最后两个，抓紧。',
+  ai:{stage:'证据链完整 · 收网就绪',warn:true,note:'作案工具集齐：微信号 + 诈骗域名 + 收款通道。可发起收网。',fp:'提取 → 收款通道',extract:{k:'收款通道',v:'622***...***41'}},threat:100},
+];
+
+let cur=0;
+const chat=document.getElementById('chat'),ailog=document.getElementById('ailog'),locker=document.getElementById('locker');
+const nextBtn=document.getElementById('nextBtn'),bustBtn=document.getElementById('bustBtn');
+const tfill=document.getElementById('tfill'),tval=document.getElementById('tval');
+const reduce=window.matchMedia('(prefers-reduced-motion:reduce)').matches;
+let extracted=[];
+
+function setThreat(v){tfill.style.width=v+'%';tval.textContent=v+'%';
+  tfill.style.background = v>=80?'var(--threat)':v>=50?'#ff8a3d':'var(--honey)';}
+
+function nextStep(){
+  if(cur>=STEPS.length)return;
+  const s=STEPS[cur];
+  if(ailog.querySelector('.locker-empty'))ailog.innerHTML='';
+
+  const showMsg=()=>{
+    const m=document.createElement('div');m.className='msg '+(s.side==='scam'?'scam':'bait');
+    m.innerHTML=`<div class="who">${s.who}${s.aiplay?'<span class="aiplay">AI诱饵</span>':''}</div>${s.text}`;
+    chat.appendChild(m);chat.scrollTop=chat.scrollHeight;
+    // AI event
+    const ev=document.createElement('div');ev.className='ev';
+    ev.innerHTML=`<div class="stage ${s.ai.warn?'warn':''}">${s.ai.stage}<span>${String(cur+1).padStart(2,'0')}</span></div>
+      <div class="note">${s.ai.note}</div>${s.ai.fp?`<div class="fp">${s.ai.fp}</div>`:''}`;
+    ailog.appendChild(ev);ailog.scrollTop=ailog.scrollHeight;
+    if(s.ai.extract){
+      extracted.push(s.ai.extract);
+      if(locker.querySelector('.locker-empty'))locker.innerHTML='';
+      const a=document.createElement('div');a.className='artifact';
+      a.innerHTML=`<span class="k">${s.ai.extract.k}</span><span class="v">${s.ai.extract.v}</span>`;
+      locker.appendChild(a);
+      document.getElementById('evcount').textContent=extracted.length;
+    }
+    setThreat(s.threat);
+    document.getElementById('stepnow').textContent=cur+1;
+    document.getElementById('phaselabel').textContent=s.ai.stage.replace(/阶段 · |· 收网就绪/g,'');
+    cur++;
+    if(cur>=STEPS.length){nextBtn.style.display='none';bustBtn.classList.add('ready');
+      document.getElementById('phaselabel').textContent='收网就绪';}
+  };
+
+  if(s.side==='scam'&&!reduce){
+    const t=document.createElement('div');t.className='typing';t.innerHTML='<i></i><i></i><i></i>';
+    chat.appendChild(t);chat.scrollTop=chat.scrollHeight;
+    nextBtn.disabled=true;
+    setTimeout(()=>{t.remove();showMsg();nextBtn.disabled=false;},700);
+  }else{showMsg();}
+}
+
+function resetSting(){
+  cur=0;extracted=[];
+  chat.innerHTML='<div class="sys-note">诱饵已布署 · AI 接管账号 · 不主动搭讪任何人，仅等待可疑接触</div>';
+  ailog.innerHTML='<div class="locker-empty">等待目标上钩……</div>';
+  locker.innerHTML='<div class="locker-empty">暂无</div>';
+  document.getElementById('evcount').textContent='0';
+  document.getElementById('stepnow').textContent='0';
+  document.getElementById('phaselabel').textContent='待命';
+  nextBtn.style.display='';nextBtn.disabled=false;bustBtn.classList.remove('ready');
+  setThreat(0);
+}
+
+/* ===== bust network ===== */
+const LINKS=[
+ {cap:'同一微信号'},{cap:'同一话术脚本'},{cap:'同一收款码'},
+ {cap:'同一诈骗域名'},{cap:'同一设备指纹'},{cap:'同一注册批次'},
+];
+function bust(){
+  const overlay=document.getElementById('bust');overlay.classList.add('show');
+  const net=document.getElementById('net'),svg=document.getElementById('netsvg');
+  net.querySelectorAll('.node').forEach(n=>n.remove());svg.innerHTML='';
+  document.getElementById('buststats').style.display='none';
+  const scan=document.getElementById('scanline');scan.textContent='正在用话术指纹全平台扫描同源账号……';
+
+  const W=net.clientWidth,H=net.clientHeight,cx=W/2,cy=H/2;
+  // center
+  const c=document.createElement('div');c.className='node center appear';
+  c.style.left=cx+'px';c.style.top=cy+'px';
+  c.innerHTML='<div class="ball">已锁定</div><div class="cap">@afar_xx · 本次收网</div>';
+  net.appendChild(c);
+
+  const R=Math.min(W,H)*0.36;
+  LINKS.forEach((lk,i)=>{
+    const ang=(Math.PI*2/LINKS.length)*i - Math.PI/2;
+    const x=cx+Math.cos(ang)*R, y=cy+Math.sin(ang)*R;
+    const delay=reduce?0:400+i*260;
+    setTimeout(()=>{
+      const line=document.createElementNS('http://www.w3.org/2000/svg','line');
+      line.setAttribute('x1',cx);line.setAttribute('y1',cy);
+      line.setAttribute('x2',x);line.setAttribute('y2',y);
+      line.setAttribute('stroke','rgba(240,82,75,.4)');line.setAttribute('stroke-width','1.2');
+      line.setAttribute('stroke-dasharray','3 3');svg.appendChild(line);
+      const n=document.createElement('div');n.className='node linked appear';
+      n.style.left=x+'px';n.style.top=y+'px';
+      n.innerHTML=`<div class="ball">关联</div><div class="cap">${lk.cap}</div>`;
+      net.appendChild(n);
+    },delay);
+  });
+  const endDelay=reduce?0:400+LINKS.length*260+300;
+  setTimeout(()=>{scan.textContent='✓ 同源团伙锁定完成 · 已批量封禁并固定证据';
+    scan.style.color='var(--capture)';
+    document.getElementById('buststats').style.display='grid';},endDelay);
+}
+function closeBust(){const o=document.getElementById('bust');o.classList.remove('show');
+  document.getElementById('scanline').style.color='var(--honey)';}
+document.getElementById('bust').addEventListener('click',e=>{if(e.target.id==='bust')closeBust();});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeBust();});
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.5.0/echarts.min.js"></script>
+<script>
+(function(){
+  function initTrend(){
+    if(typeof echarts==='undefined')return;
+    var el=document.getElementById('trendChart');if(!el)return;
+    var reduceM=window.matchMedia('(prefers-reduced-motion:reduce)').matches;
+    var chart=echarts.init(el,null,{renderer:'canvas'});
+    var months=['1月','2月','3月','4月','5月','6月'];
+    var data=[15,19,26,31,38,47];
+    chart.setOption({
+      animation:!reduceM,animationDuration:900,animationEasing:'cubicOut',
+      grid:{left:8,right:14,top:18,bottom:8,containLabel:true},
+      tooltip:{trigger:'axis',backgroundColor:'#1A2230',borderColor:'rgba(255,255,255,.14)',
+        borderWidth:1,textStyle:{color:'#EAEDF2',fontSize:12},
+        formatter:function(p){return p[0].axisValue+'　清除团伙 <b style="color:#FFB020">'+p[0].data+'</b> 个';}},
+      xAxis:{type:'category',data:months,boundaryGap:true,
+        axisLine:{lineStyle:{color:'rgba(255,255,255,.14)'}},
+        axisTick:{show:false},axisLabel:{color:'#8A93A6',fontSize:12}},
+      yAxis:{type:'value',
+        splitLine:{lineStyle:{color:'rgba(255,255,255,.06)'}},
+        axisLabel:{color:'#5B6475',fontSize:11},axisLine:{show:false},axisTick:{show:false}},
+      series:[{
+        type:'bar',data:data,barWidth:'46%',
+        itemStyle:{borderRadius:[5,5,0,0],
+          color:new echarts.graphic.LinearGradient(0,0,0,1,[
+            {offset:0,color:'#FFB020'},{offset:1,color:'rgba(255,176,32,.28)'}])},
+        emphasis:{itemStyle:{color:'#FFC44D'}},
+        markLine:{silent:true,symbol:'none',
+          lineStyle:{color:'rgba(255,176,32,.45)',type:'dashed',width:1},
+          data:[{type:'average',name:'均值'}],
+          label:{color:'#8A93A6',fontSize:10,formatter:'均值 {c}'}}
+      }]
+    });
+    window.addEventListener('resize',function(){chart.resize();});
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initTrend);
+  else initTrend();
+})();
+</script>
+</body>
+</html>
